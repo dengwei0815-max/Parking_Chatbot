@@ -1,0 +1,6 @@
+langchain
+pymilvus
+transformers
+scikit-learn
+pytest
+langchain-openai
