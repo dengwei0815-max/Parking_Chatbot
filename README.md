@@ -32,31 +32,10 @@ An intelligent, modular parking chatbot system with Retrieval-Augmented Generati
 
 ---
 
-## Architecture Diagram
-
-```mermaid
-flowchart TD
-    User([User])
-    Chatbot([Chatbot (RAG Agent)])
-    Admin([Admin Agent<br/>(REST API + UI)])
-    MCP([MCP Server<br/>(FastAPI)])
-    File[(confirmed_reservations.txt)]
-
-    User -->|Asks questions<br/>or requests reservation| Chatbot
-    Chatbot -->|Escalates reservation| Admin
-    Admin -->|If approved,<br/>send to MCP| MCP
-    MCP -->|Write to file| File
-    Admin -->|If refused,<br/>notify Chatbot| Chatbot
-    Chatbot -->|Informs user| User
-```
-
----
-
 ## Features
 
 - RAG-based information retrieval
--
-Interactive reservation flow
+- Interactive reservation flow
 - Sensitive data filtering
 - Human-in-the-loop approval (REST API + HTML dashboard)
 - Secure, auditable reservation processing (MCP server)
