@@ -1,30 +1,49 @@
 
-# 🚗 Parking Chatbot (RAG-based)
+# 🚗 Parking Chatbot Project
 
-An intelligent chatbot for parking information and reservation, powered by Retrieval-Augmented Generation (RAG), LangChain, Milvus, and HuggingFace.
+An intelligent parking chatbot system with Retrieval-Augmented Generation (RAG) and a human-in-the-loop reservation approval workflow.
+
+---
+
+## Project Stages
+
+### **Stage 1: RAG Chatbot**
+
+- Answers parking-related questions (location, hours, prices, availability)
+- Collects reservation details interactively
+- Uses Milvus vector database for retrieval
+- Sensitive data guardrails (NER-based filtering)
+- Automated tests and evaluation scripts
+
+### **Stage 2: Human-in-the-Loop Admin Agent**
+
+- Escalates reservation requests to a human administrator
+- Admin reviews and approves/refuses requests via REST API and simple HTML UI
+- Chatbot polls for admin decision and informs the user
+- Maintains communication between chatbot and admin agent
 
 ---
 
 ## Features
 
-- Answers questions about parking location, hours, prices, and availability
-- Handles interactive parking space reservations
-- Sensitive data guardrails (NER-based filtering)
-- Vector database (Milvus) for efficient retrieval
-- Easily extensible and testable
+- RAG-based information retrieval
+- Interactive reservation flow
+- Sensitive data filtering
+- Human-in-the-loop approval (REST API + HTML dashboard)
+- Modular, extensible codebase
 
 ---
 
 ## Setup
 
-### 1. Clone the repository
+### **1. Clone the repository**
 
 ```bash
 git clone https://github.com/yourusername/parking-chatbot.git
 cd parking-chatbot
 ```
 
-### 2. Create and activate a virtual environment
+### **2. Create and activate a virtual environment**
 
 ```bash
 python -m venv .venv
@@ -34,45 +53,42 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install dependencies
+### **3. Install dependencies**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Start Milvus (Docker required)
+### **4. Start Milvus (Docker required)**
 
 ```bash
 docker compose up -d
 ```
 
-### 5. Ingest parking data
+### **5. Ingest parking data (Stage 1)**
 
 ```bash
 python ingest_parking_data.py
 ```
 
-### 6. Run the chatbot
+---
+
+## Stage 1: RAG Chatbot
+
+### **Run the chatbot**
 
 ```bash
 python app.py
 ```
 
----
-
-## Usage
-
-- Type your questions (e.g., "What are the parking hours?").
-- To make a reservation, follow the chatbot prompts.
+- Ask questions like "What are the parking hours?" or "Where is the parking lot?"
+- To make a reservation, type "I want to reserve a parking space" and follow the prompts.
 - Sensitive information (like names) will be filtered.
 
----
-
-## Project Structure
+### **Project Structure (Stage 1)**
 
 ```
 parking_chatbot/
-│
 ├── app.py                  # Main chatbot loop
 ├── db.py                   # Milvus DB schema and connection
 ├── rag.py                  # RAG chain logic
@@ -86,10 +102,31 @@ parking_chatbot/
 
 ---
 
-## Configuration
+## Stage 2: Human-in-the-Loop Admin Agent
 
-- **Milvus**: Default connection is `localhost:19530`. Change in `db.py` if needed.
-- **OpenAI/Azure/DeepSeek**: Set your API key as an environment variable if using LLM APIs.
+### **Run the admin agent (REST API + HTML UI)**
+
+```bash
+python admin_agent.py
+```
+
+- Open [http://localhost:5001/](http://localhost:5001/) in your browser to view and manage pending reservations.
+
+### **Reservation Approval Workflow**
+
+1. User submits a reservation via chatbot.
+2. Chatbot sends reservation details to admin REST API.
+3. Admin reviews requests in the HTML dashboard and clicks "Confirm" or "Refuse".
+4. Chatbot polls for admin decision and informs the user.
+
+### **Project Structure (Stage 2 additions)**
+
+```
+parking_chatbot/
+├── reservation.py          # Reservation data model
+├── admin_agent.py          # REST API and HTML admin dashboard
+├── app.py                  # Chatbot with human-in-the-loop integration
+```
 
 ---
 
@@ -103,9 +140,9 @@ pytest tests/
 
 ## Troubleshooting
 
-- **Milvus connection errors**: Make sure Milvus is running (`docker ps`).
-- **Schema errors**: Drop and recreate the collection if you change the schema.
-- **Missing dependencies**: Regenerate `requirements.txt` with `pip freeze > requirements.txt`.
+- **Milvus connection errors:** Make sure Milvus is running (`docker ps`).
+- **Schema errors:** Drop and recreate the collection if you change the schema.
+- **Admin agent not receiving reservations:** Check both terminals for errors, ensure both are running and using the same port.
 
 ---
 
@@ -124,4 +161,3 @@ MIT
 - [DeepSeek](https://platform.deepseek.com/)
 
 ---
-
