@@ -5,10 +5,12 @@ def main():
     print("Welcome to Parking Chatbot!")
     while True:
         user_input = input("You: ")
+        # Filter sensitive information
         filtered_input = filter_sensitive(user_input)
         if filtered_input.startswith("[Sensitive"):
             print(filtered_input)
             continue
+        # Call the RAG chatbot
         response = ask_chatbot(filtered_input)
         print("Bot:", response)
 
