@@ -1,136 +1,102 @@
 
-# 🚗 Parking Chatbot Project
 
-An intelligent parking chatbot system with Retrieval-Augmented Generation (RAG) and a human-in-the-loop reservation approval workflow.
+# 🚦 Execution Steps
 
----
+## **1. Prepare the Environment**
 
-## Project Stages
+- Open a terminal (PowerShell, CMD, or bash).
+- Navigate to your project directory.
 
-### **Stage 1: RAG Chatbot**
-
-- Answers parking-related questions (location, hours, prices, availability)
-- Collects reservation details interactively
-- Uses Milvus vector database for retrieval
-- Sensitive data guardrails (NER-based filtering)
-- Automated tests and evaluation scripts
-
-### **Stage 2: Human-in-the-Loop Admin Agent**
-
-- Escalates reservation requests to a human administrator
-- Admin reviews and approves/refuses requests via REST API and simple HTML UI
-- Chatbot polls for admin decision and informs the user
-- Maintains communication between chatbot and admin agent
-
----
-
-## Features
-
-- RAG-based information retrieval
-- Interactive reservation flow
-- Sensitive data filtering
-- Human-in-the-loop approval (REST API + HTML dashboard)
-- Modular, extensible codebase
-
----
-
-## Setup
-
-### **1. Clone the repository**
-
-```bash
-git clone https://github.com/yourusername/parking-chatbot.git
-cd parking-chatbot
-```
-
-### **2. Create and activate a virtual environment**
+### **A. Create and activate a virtual environment**
 
 ```bash
 python -m venv .venv
-# Windows
+# Windows:
 .venv\Scripts\activate
-# macOS/Linux
+# macOS/Linux:
 source .venv/bin/activate
 ```
 
-### **3. Install dependencies**
+### **B. Install dependencies**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### **4. Start Milvus (Docker required)**
+---
+
+## **2. Start Milvus (Vector Database)**
+
+- Make sure Docker is running.
+- In your project directory, start Milvus:
 
 ```bash
 docker compose up -d
 ```
 
-### **5. Ingest parking data (Stage 1)**
+---
+
+## **3. Ingest Parking Data (Stage 1)**
 
 ```bash
 python ingest_parking_data.py
 ```
+- This will populate Milvus with parking information for retrieval.
 
 ---
 
-## Stage 1: RAG Chatbot
-
-### **Run the chatbot**
+## **4. Start the MCP Server (Stage 3)**
 
 ```bash
-python app.py
+python mcp_server.py
 ```
-
-- Ask questions like "What are the parking hours?" or "Where is the parking lot?"
-- To make a reservation, type "I want to reserve a parking space" and follow the prompts.
-- Sensitive information (like names) will be filtered.
-
-### **Project Structure (Stage 1)**
-
-```
-parking_chatbot/
-├── app.py                  # Main chatbot loop
-├── db.py                   # Milvus DB schema and connection
-├── rag.py                  # RAG chain logic
-├── guard_rails.py          # Sensitive data filtering
-├── ingest_parking_data.py  # Data ingestion script
-├── evaluation.py           # Evaluation scripts
-├── requirements.txt
-├── README.md
-└── tests/                  # Automated tests
-```
+- This will start the FastAPI server on port 8000.
+- (Optional) Set the API key for security:
+  ```bash
+  # Windows PowerShell
+  $env:MCP_API_KEY="your_secret_key"
+  # macOS/Linux
+  export MCP_API_KEY="your_secret_key"
+  ```
 
 ---
 
-## Stage 2: Human-in-the-Loop Admin Agent
+## **5. Start the Admin Agent (Stage 2)**
 
-### **Run the admin agent (REST API + HTML UI)**
+Open a **new terminal** (keep MCP server running):
 
 ```bash
 python admin_agent.py
 ```
-
-- Open [http://localhost:5001/](http://localhost:5001/) in your browser to view and manage pending reservations.
-
-### **Reservation Approval Workflow**
-
-1. User submits a reservation via chatbot.
-2. Chatbot sends reservation details to admin REST API.
-3. Admin reviews requests in the HTML dashboard and clicks "Confirm" or "Refuse".
-4. Chatbot polls for admin decision and informs the user.
-
-### **Project Structure (Stage 2 additions)**
-
-```
-parking_chatbot/
-├── reservation.py          # Reservation data model
-├── admin_agent.py          # REST API and HTML admin dashboard
-├── app.py                  # Chatbot with human-in-the-loop integration
-```
+- This will start the Flask server on port 5001.
+- Open [http://localhost:5001/](http://localhost:5001/) in your browser to view/manage reservations.
 
 ---
 
-## Testing
+## **6. Start the Chatbot (Stage 1 & 2)**
+
+Open another **new terminal**:
+
+```bash
+python app.py
+```
+- You’ll see: `Welcome to Parking Chatbot!`
+
+---
+
+## **7. Test the Full Workflow**
+
+1. **In the chatbot**, type:  
+   `I want to reserve a parking space`
+2. **Follow the prompts** (enter name, car number, period).
+3. **Chatbot will say:** `Waiting for admin approval...`
+4. **Go to the admin UI** ([http://localhost:5001/](http://localhost:5001/)), find the pending reservation, and click **Confirm** or **Refuse**.
+5. **Chatbot will notify you** of the admin’s decision.
+6. **If confirmed**, check `confirmed_reservations.txt` (in your project folder) for the new entry.
+
+---
+
+## **8. Run Automated Tests (Optional)**
 
 ```bash
 pytest tests/
@@ -138,26 +104,21 @@ pytest tests/
 
 ---
 
-## Troubleshooting
+## **Summary Table**
 
-- **Milvus connection errors:** Make sure Milvus is running (`docker ps`).
-- **Schema errors:** Drop and recreate the collection if you change the schema.
-- **Admin agent not receiving reservations:** Check both terminals for errors, ensure both are running and using the same port.
-
----
-
-## License
-
-MIT
-
----
-
-## Acknowledgements
-
-- [LangChain](https://github.com/langchain-ai/langchain)
-- [Milvus](https://milvus.io/)
-- [HuggingFace Transformers](https://huggingface.co/transformers/)
-- [OpenAI](https://openai.com/)
-- [DeepSeek](https://platform.deepseek.com/)
+| Step | Command / Action                              | Result                                      |
+|------|----------------------------------------------|---------------------------------------------|
+| 1    | Create/activate venv, install requirements   | Python environment ready                    |
+| 2    | `docker compose up -d`                       | Milvus running                              |
+| 3    | `python ingest_parking_data.py`              | Data loaded into Milvus                     |
+| 4    | `python mcp_server.py`                       | MCP server running on port 8000             |
+| 5    | `python admin_agent.py`                      | Admin UI at http://localhost:5001/          |
+| 6    | `python app.py`                              | Chatbot running                             |
+| 7    | Use chatbot & admin UI                       | End-to-end reservation flow                 |
+| 8    | `pytest tests/`                              | Run automated tests                         |
 
 ---
+
+**If you encounter any errors at any step, paste the error message here and I’ll help you debug!**
+
+If you want a one-page quickstart or a script to launch all services, let me know!

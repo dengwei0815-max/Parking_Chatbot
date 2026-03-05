@@ -1,5 +1,3 @@
-# app.py
-
 from reservation import Reservation
 from rag import ask_chatbot
 from guard_rails import filter_sensitive
@@ -20,7 +18,7 @@ def send_reservation_to_admin(reservation):
         "period": reservation.period
     }
     resp = requests.post("http://localhost:5001/reservation", json=payload)
-    print("Admin API response:", resp.status_code, resp.text)  # <-- Add this line
+    print("Admin API response:", resp.status_code, resp.text)  # Debug print
     return res_id
 
 def wait_for_admin_response(res_id, timeout=120):
