@@ -33,5 +33,21 @@ async def process_reservation(request: Request):
 
     return JSONResponse(content={"message": "Reservation processed", "entry": entry})
 
+def process_reservation_file(reservation):
+    """
+    Write confirmed reservation to file.
+    Handles file errors gracefully.
+    """
+    approval_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    entry = f"{reservation.name} | {reservation.car_number} | {reservation.period} | {approval_time}\n"
+    try:
+        with open("confirmed_reservations.txt", "a", encoding="utf-8") as f:
+            f.write(entry)
+        print("Reservation written to file.")
+        return True
+    except Exception as e:
+        print(f"Error writing reservation to file: {e}")
+        return False
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

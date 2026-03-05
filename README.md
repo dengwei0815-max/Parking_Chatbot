@@ -1,6 +1,6 @@
 # 🚗 Parking Chatbot Project
 
-An intelligent, modular parking chatbot system with Retrieval-Augmented Generation (RAG), human-in-the-loop approval, and secure reservation processing.
+An intelligent, modular parking chatbot system with Retrieval-Augmented Generation (RAG), human-in-the-loop approval, secure reservation processing, and full workflow orchestration.
 
 ---
 
@@ -24,15 +24,43 @@ An intelligent, modular parking chatbot system with Retrieval-Augmented Generati
 - Ensures only authorized agents can write reservations
 - File format: `Name | Car Number | Reservation Period | Approval Time`
 
+### **Stage 4: Orchestration via LangGraph or Workflow Logic**
+- Orchestrates the entire pipeline: chatbot → admin agent → MCP server
+- Ensures seamless, automated flow between all components
+- Integration and load testing of the full workflow
+- Unified documentation and deployment
+
+---
+
+## Architecture Diagram
+
+```mermaid
+flowchart TD
+    User([User])
+    Chatbot([Chatbot (RAG Agent)])
+    Admin([Admin Agent<br/>(REST API + UI)])
+    MCP([MCP Server<br/>(FastAPI)])
+    File[(confirmed_reservations.txt)]
+
+    User -->|Asks questions<br/>or requests reservation| Chatbot
+    Chatbot -->|Escalates reservation| Admin
+    Admin -->|If approved,<br/>send to MCP| MCP
+    MCP -->|Write to file| File
+    Admin -->|If refused,<br/>notify Chatbot| Chatbot
+    Chatbot -->|Informs user| User
+```
+
 ---
 
 ## Features
 
 - RAG-based information retrieval
-- Interactive reservation flow
+-
+Interactive reservation flow
 - Sensitive data filtering
 - Human-in-the-loop approval (REST API + HTML dashboard)
 - Secure, auditable reservation processing (MCP server)
+- Full workflow orchestration (LangGraph or procedural)
 - Modular, extensible codebase
 
 ---
@@ -78,12 +106,9 @@ python ingest_parking_data.py
 
 ## Stage 1: RAG Chatbot
 
-### Run the chatbot
-
 ```bash
 python app.py
 ```
-
 - Ask questions like "What are the parking hours?" or "Where is the parking lot?"
 - To make a reservation, type "I want to reserve a parking space" and follow the prompts.
 - Sensitive information (like names) will be filtered.
@@ -92,12 +117,9 @@ python app.py
 
 ## Stage 2: Human-in-the-Loop Admin Agent
 
-### Run the admin agent (REST API + HTML UI)
-
 ```bash
 python admin_agent.py
 ```
-
 - Open [http://localhost:5001/](http://localhost:5001/) in your browser to view and manage pending reservations.
 - Approve or refuse reservations via the web UI.
 
@@ -105,67 +127,83 @@ python admin_agent.py
 
 ## Stage 3: MCP Server Integration
 
-### Run the MCP server
-
 ```bash
 python mcp_server.py
 ```
-
 - Listens on port 8000 by default.
 - Secured with an API key (`MCP_API_KEY` environment variable, default: `secret123`).
-
-### How it works
-
-1. When the admin **confirms** a reservation, the admin agent sends the reservation details to the MCP server.
-2. The MCP server writes the reservation to `confirmed_reservations.txt` in the format:
-   ```
-   Name | Car Number | Reservation Period | Approval Time
-   ```
-3. Only requests with the correct API key are accepted.
-
-### Example API call
-
-```http
-POST /process_reservation HTTP/1.1
-Host: localhost:8000
-x-api-key: secret123
-Content-Type: application/json
-
-{
-  "
-name": "David",
-  "car_number": "1123",
-  "period": "1 month"
-}
-```
+- Confirmed reservations are written to `confirmed_reservations.txt`.
 
 ---
 
-## Project Structure
+## Stage 4: Orchestration (Workflow Integration)
 
+### **A. If using LangGraph (latest stack):**
+
+```bash
+python orchestrator.py
 ```
-parking_chatbot/
-├── app.py                  # Main chatbot loop
-├── db.py                   # Milvus DB schema and connection
-├── rag.py                  # RAG chain logic
-├── guard_rails.py          # Sensitive data filtering
-├── ingest_parking_data.py  # Data ingestion script
-├── reservation.py          # Reservation data model
-├── admin_agent.py          # REST API and HTML admin dashboard
-├── mcp_server.py           # FastAPI MCP server
-├── evaluation.py           # Evaluation scripts
-├── requirements.txt
-├── README.md
-└── tests/                  # Automated tests
+- Orchestrates the full workflow: user → chatbot → admin agent → MCP server.
+- Handles all transitions and context passing between components.
+
+### **B. If using procedural orchestration (old stack):**
+
+```bash
+python orchestrator.py
 ```
+- The orchestrator function coordinates user input, admin approval, and reservation recording in sequence.
+
+---
+
+## Execution Steps (All Stages)
+
+1. **Start Milvus (if not already running):**
+   ```bash
+   docker compose up -d
+   ```
+
+2. **Ingest parking data:**
+   ```bash
+   python ingest_parking_data.py
+   ```
+
+3. **Start the MCP server:**
+   ```bash
+   python mcp_server.py
+   ```
+
+4. **Start the admin agent:**
+   ```bash
+   python admin_agent.py
+   ```
+   - Open [http://localhost:5001/](http://localhost:5001/) in your browser.
+
+5. **Start the orchestrator:**
+   ```bash
+   python orchestrator.py
+   ```
+   - This will run the full workflow, either via LangGraph or procedural logic.
+
+6. **Interact with the system:**
+   - In the chatbot, type: `I want to reserve a parking space`
+   - Enter reservation details when prompted.
+   - Approve/refuse in the admin UI.
+   - Chatbot will
+     notify you of the admin’s decision.
+   - If confirmed, check `confirmed_reservations.txt` for the new entry.
+
+7. **Run automated tests:**
+   ```bash
+   pytest tests/
+   ```
 
 ---
 
 ## Testing
 
-```bash
-pytest tests/
-```
+- **Unit tests:** Each module/function in isolation.
+- **Integration tests:** End-to-end workflow (user → admin → MCP → file).
+- **Load tests:** (Optional) Use tools like Locust or pytest-benchmark.
 
 ---
 
@@ -175,6 +213,7 @@ pytest tests/
 - **Schema errors:** Drop and recreate the collection if you change the schema.
 - **Admin agent not receiving reservations:** Check both terminals for errors, ensure both are running and using the same port.
 - **MCP server not writing file:** Check for API key mismatch or file permissions.
+- **Orchestrator errors:** Ensure all services are running and ports are correct.
 
 ---
 
@@ -198,5 +237,6 @@ MIT
 - [HuggingFace Transformers](https://huggingface.co/transformers/)
 - [OpenAI](https://openai.com/)
 - [DeepSeek](https://platform.deepseek.com/)
+- [LangGraph](https://github.com/langchain-ai/langgraph)
 
 ---
