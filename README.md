@@ -31,7 +31,7 @@ An intelligent, modular parking chatbot system with Retrieval-Augmented Generati
 - Unified documentation and deployment
 
 ---
-
+ 
 ## Features
 
 - RAG-based information retrieval
