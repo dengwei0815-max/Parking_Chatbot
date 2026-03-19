@@ -254,7 +254,7 @@ class TestE2E3RefusedReservation:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# E2E-4  Admin dashboard — web UI full flow
+# E2E-4  Admin dashboard — web UI full  flow
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestE2E4AdminDashboard:

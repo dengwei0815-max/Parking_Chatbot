@@ -21,7 +21,7 @@ class DummyReservation:
 # ── MCP tool: record_reservation_tool ────────────────────────────────────────
 
 def test_record_reservation_tool_writes_file(tmp_path, monkeypatch):
-    """record_reservation_tool should append a line to the reservation file."""
+    """record_reservation_tool should append a line to the reservation file.  """
     import mcp_server
     monkeypatch.setattr(mcp_server, "RESERVATION_FILE", str(tmp_path / "res.txt"))
 
