@@ -1,53 +1,77 @@
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
-from datetime import datetime
-import uvicorn
+"""
+Reservation Recording — Tool/Function-Call Interface
+------------------------------------------------------
+Implements the "fallback" approach specified by the task:
+  "use tool/function call for writing data into file"
+
+Exposes two interfaces:
+1. `record_reservation_tool` — a LangChain @tool used directly by the
+   orchestrator and the admin LangChain agent via function-calling.
+2. `process_reservation_file(reservation)` — a plain Python function used
+   by orchestrator.mcp_node when the decision comes from the web dashboard.
+
+Both write to confirmed_reservations.txt in the format:
+  Name | Car Number | Period | Approval Time
+"""
+
 import os
+from datetime import datetime
+from langchain_core.tools import tool
 
-app = FastAPI()
+RESERVATION_FILE = os.environ.get("RESERVATION_FILE", "confirmed_reservations.txt")
 
-RESERVATION_FILE = "confirmed_reservations.txt"
-API_KEY = os.environ.get("MCP_API_KEY", "secret123")
 
-@app.post("/process_reservation")
-async def process_reservation(request: Request):
-    """
-    Receives confirmed reservation and writes to file.
-    Secured by API key.
-    """
-    if request.headers.get("x-api-key") != API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+# ── Shared write implementation ───────────────────────────────────────────────
 
-    data = await request.json()
-    name = data.get("name")
-    car_number = data.get("car_number")
-    period = data.get("period")
+def _write_entry(name: str, car_number: str, period: str) -> str:
+    """Append one reservation line to the file. Returns the written entry."""
     approval_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    if not all([name, car_number, period]):
-        raise HTTPException(status_code=400, detail="Missing reservation fields")
-
     entry = f"{name} | {car_number} | {period} | {approval_time}\n"
     with open(RESERVATION_FILE, "a", encoding="utf-8") as f:
         f.write(entry)
+    return entry
 
-    return JSONResponse(content={"message": "Reservation processed", "entry": entry})
 
-def process_reservation_file(reservation):
+# ── LangChain @tool (function-call interface) ─────────────────────────────────
+
+@tool
+def record_reservation_tool(name: str, car_number: str, period: str) -> str:
     """
-    Write confirmed reservation to file.
-    Handles file errors gracefully.
+    Record a confirmed parking reservation to the persistent file store.
+
+    Use this tool after a reservation has been approved to persist the record.
+
+    Args:
+        name:       Full name of the person making the reservation.
+        car_number: Vehicle registration number.
+        period:     Reservation period (e.g. '2 days', '1 week').
+
+    Returns:
+        Confirmation string with the recorded entry.
     """
-    approval_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    entry = f"{reservation.name} | {reservation.car_number} | {reservation.period} | {approval_time}\n"
     try:
-        with open("confirmed_reservations.txt", "a", encoding="utf-8") as f:
-            f.write(entry)
+        entry = _write_entry(name, car_number, period)
+        return f"Reservation recorded: {entry.strip()}"
+    except Exception as e:
+        return f"Failed to record reservation: {e}"
+
+
+# ── Plain function used by orchestrator.mcp_node ──────────────────────────────
+
+def process_reservation_file(reservation) -> bool:
+    """
+    Write a confirmed reservation object to file.
+
+    Args:
+        reservation: object with .name, .car_number, .period attributes.
+
+    Returns:
+        True on success, False on failure.
+    """
+    try:
+        _write_entry(reservation.name, reservation.car_number, reservation.period)
         print("Reservation written to file.")
         return True
     except Exception as e:
         print(f"Error writing reservation to file: {e}")
         return False
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,46 +1,107 @@
-# 🚗 Parking Chatbot Project
+# Parking Chatbot Project
 
-An intelligent, modular parking chatbot system with Retrieval-Augmented Generation (RAG), human-in-the-loop approval, secure reservation processing, and full workflow orchestration.
+An intelligent, modular parking chatbot system with Retrieval-Augmented Generation (RAG), a LangChain admin agent with human-in-the-loop approval, secure reservation recording, LangGraph workflow orchestration, and guardrails that protect sensitive data in both directions.
+
+---
+
+## Architecture Overview
+
+```
+User (CLI)
+   │
+   ▼
+app.py  ──────────────────────────────────────────────────────────┐
+   │  filter_input (guard_rails)                                   │
+   │  ask_chatbot (rag.py → Milvus → Azure OpenAI)                │
+   │  filter_output (guard_rails)                                  │
+   │                                                               │
+   │  [reservation request]                                        │
+   ▼                                                               │
+admin_agent.py (Flask :5001)                                       │
+   │  POST /reservation  ←─── chatbot submits                     │
+   │  GET  /reservation/<id>/status  ←─── chatbot polls           │
+   │  POST /decision/<id>  ←─── admin clicks Confirm/Refuse       │
+   │  SQLite (reservations.db)                                     │
+   ▼                                                               │
+mcp_server.py                                                      │
+   │  process_reservation_file()  ─── writes confirmed_reservations.txt
+   │  record_reservation_tool (@tool, LangChain function call)     │
+   ▼                                                               │
+orchestrator.py  (LangGraph StateGraph)                            │
+   user_node → admin_node → mcp_node → user_node (loop)   ────────┘
+        │            │
+        │     admin_langchain_agent.py
+        │       (LangChain AgentExecutor)
+        │       Tools: get_pending_reservations
+        │              decide_reservation
+        ▼
+confirmed_reservations.txt
+reservations.db
+```
 
 ---
 
 ## Project Stages
 
-### **Stage 1: RAG Chatbot**
-- Answers parking-related questions (location, hours, prices, availability)
+### Stage 1 — RAG Chatbot
+- Answers parking questions (location, hours, rates, availability) via Milvus vector DB + Azure OpenAI
 - Collects reservation details interactively
-- Uses Milvus vector database for retrieval
-- Sensitive data guardrails (NER-based filtering)
-- Automated tests and evaluation scripts
+- NER-based guardrails redact person names from both user input and LLM output
+- RAG chain is built once and cached (no rebuild on every call)
 
-### **Stage 2: Human-in-the-Loop Admin Agent**
-- Escalates reservation requests to a human administrator
-- Admin reviews and approves/refuses requests via REST API and simple HTML UI
-- Chatbot polls for admin decision and informs the user
+### Stage 2 — LangChain Admin Agent
+- `admin_langchain_agent.py` is a real LangChain `AgentExecutor` using `create_tool_calling_agent`
+- Two tools: `get_pending_reservations` (read from SQLite) and `decide_reservation` (write decision to SQLite)
+- `admin_agent.py` provides a Flask web dashboard for human-in-the-loop approval
+  - Session-based authentication (password via `ADMIN_PASSWORD` env var)
+  - All reservations persisted in SQLite — no data loss on restart
+  - Jinja2 auto-escaping throughout — no XSS risk
 
-### **Stage 3: MCP Server Integration**
-- MCP server (FastAPI) receives confirmed reservations from the admin agent
-- Securely writes reservation details to a text file
-- Ensures only authorized agents can write reservations
-- File format: `Name | Car Number | Reservation Period | Approval Time`
+### Stage 3 — MCP / Reservation Recording (tool/function-call fallback)
+- `mcp_server.py` exposes reservation recording as a **LangChain `@tool`** (`record_reservation_tool`) — satisfies the task's "use tool/function call for writing data into file" requirement
+- `process_reservation_file()` is the plain-Python equivalent used by `orchestrator.mcp_node`
+- Both write to `confirmed_reservations.txt` with a timestamp in the format: `Name | Car | Period | Time`
 
-### **Stage 4: Orchestration via LangGraph or Workflow Logic**
-- Orchestrates the entire pipeline: chatbot → admin agent → MCP server
-- Ensures seamless, automated flow between all components
-- Integration and load testing of the full workflow
-- Unified documentation and deployment
+### Stage 4 — LangGraph Orchestration
+- `orchestrator.py` uses `langgraph.graph.StateGraph` with a typed `WorkflowState` (`TypedDict`)
+- Three explicit workflow nodes:
+  - `user_node` — user interaction, RAG chatbot, guardrails
+  - `admin_node` — LangChain agent drives approval decision
+  - `mcp_node` — records confirmed reservations via MCP tool
+- Conditional routing between nodes via `add_conditional_edges`
 
 ---
- 
-## Features
 
-- RAG-based information retrieval
-- Interactive reservation flow
-- Sensitive data filtering
-- Human-in-the-loop approval (REST API + HTML dashboard)
-- Secure, auditable reservation processing (MCP server)
-- Full workflow orchestration (LangGraph or procedural)
-- Modular, extensible codebase
+## Project Structure
+
+```
+parking-chatbot/
+├── app.py                    # Chatbot CLI entry point
+├── orchestrator.py           # LangGraph workflow (user → admin → mcp)
+├── rag.py                    # RAG chain (cached singleton)
+├── guard_rails.py            # NER-based input/output redaction
+├── admin_agent.py            # Flask admin dashboard + chatbot REST API
+├── admin_langchain_agent.py  # LangChain AgentExecutor (second agent)
+├── admin_api_client.py       # Chatbot-side HTTP client for admin polling
+├── mcp_server.py             # LangChain @tool + plain function for reservation recording
+├── reservation.py            # Reservation data model
+├── reservation_db.py         # SQLite helpers (init, save, get, get_all)
+├── ingest_parking_data.py    # One-time Milvus data ingestion
+├── db.py                     # Milvus collection schema helpers
+├── evaluation.py             # Latency + semantic similarity evaluation
+├── run_evaluation.py         # Evaluation entry point (writes evaluation_report.txt)
+├── docker-compose.yml        # Milvus stack (etcd, minio, standalone)
+├── requirements.txt
+├── volumes/
+│   └── var.py                # Azure OpenAI env var loading
+└── tests/
+    ├── test_e2e.py            # End-to-end tests (7 scenarios, 24 tests)
+    ├── test_integration.py    # Integration tests (nodes, DB, Flask, caching)
+    ├── test_guard_rails.py    # Guard-rails unit tests
+    ├── test_mcp_server.py     # MCP file-write tests
+    ├── test_admin_api_client.py
+    └── test_rag.py            # RAG tests (requires live Milvus + OpenAI)
+```
 
 ---
 
@@ -69,153 +130,178 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Start Milvus (Docker required)
+### 4. Configure environment variables
+
+Create a `.env` file or export these in your shell:
+
+```bash
+export AZURE_OPENAI_API_KEY=...
+export AZURE_OPENAI_ENDPOINT=...
+export AZURE_OPENAI_DEPLOYMENT_NAME=...
+export AZURE_OPENAI_API_VERSION=...
+export ADMIN_PASSWORD=adminpass          # admin dashboard password
+export FLASK_SECRET_KEY=change-me       # Flask session secret
+```
+
+### 5. Start Milvus (Docker required)
 
 ```bash
 docker compose up -d
 ```
 
-### 5. Ingest parking data (Stage 1)
+Wait ~30 seconds, then verify:
+
+```bash
+docker ps   # etcd, minio, milvus-standalone should all show Up
+```
+
+### 6. Ingest parking data (run once)
 
 ```bash
 python ingest_parking_data.py
 ```
 
----
-
-## Stage 1: RAG Chatbot
-
-```bash
-python app.py
-```
-- Ask questions like "What are the parking hours?" or "Where is the parking lot?"
-- To make a reservation, type "I want to reserve a parking space" and follow the prompts.
-- Sensitive information (like names) will be filtered.
+Expected output: `Data ingestion complete!`
 
 ---
 
-## Stage 2: Human-in-the-Loop Admin Agent
+## Running the System
+
+Open **two terminals**.
+
+**Terminal 1 — Admin dashboard:**
 
 ```bash
 python admin_agent.py
 ```
-- Open [http://localhost:5001/](http://localhost:5001/) in your browser to view and manage pending reservations.
-- Approve or refuse reservations via the web UI.
 
----
+Open `http://localhost:5001` in your browser and log in with `ADMIN_PASSWORD`.
 
-## Stage 3: MCP Server Integration
+**Terminal 2 — Chatbot (app.py direct) or full LangGraph workflow:**
 
 ```bash
-python mcp_server.py
-```
-- Listens on port 8000 by default.
-- Secured with an API key (`MCP_API_KEY` environment variable, default: `secret123`).
-- Confirmed reservations are written to `confirmed_reservations.txt`.
+# Simple chatbot + REST polling flow
+python app.py
 
----
-
-## Stage 4: Orchestration (Workflow Integration)
-
-### **A. If using LangGraph (latest stack):**
-
-```bash
+# Full LangGraph orchestrated flow (user_node → admin_node → mcp_node)
 python orchestrator.py
 ```
-- Orchestrates the full workflow: user → chatbot → admin agent → MCP server.
-- Handles all transitions and context passing between components.
 
-### **B. If using procedural orchestration (old stack):**
+### Example interaction
+
+```
+You: What are the parking hours?
+Bot: The parking lot is open 24 hours a day.
+
+You: I want to reserve a parking space
+Please enter your name: Alice Smith
+Please enter your car number: AB-1234
+Please enter reservation period: 2 days
+Waiting for admin approval...
+```
+
+In the browser at `http://localhost:5001`, click **Confirm**.
+
+```
+Bot: Your reservation is confirmed!
+```
+
+Check the output file:
 
 ```bash
-python orchestrator.py
+cat confirmed_reservations.txt
+# Alice Smith | AB-1234 | 2 days | 2026-03-19 14:32:01
 ```
-- The orchestrator function coordinates user input, admin approval, and reservation recording in sequence.
 
 ---
 
-## Execution Steps (All Stages)
+## Guardrails
 
-1. **Start Milvus (if not already running):**
-   ```bash
-   docker compose up -d
-   ```
+Sensitive data (person names) is protected in both directions:
 
-2. **Ingest parking data:**
-   ```bash
-   python ingest_parking_data.py
-   ```
+| Direction | Function | Effect |
+|---|---|---|
+| User input → LLM | `filter_input()` | Detected names replaced with `[REDACTED]` before reaching vector DB / LLM |
+| LLM output → User | `filter_output()` | Detected names replaced with `[REDACTED]` before display |
 
-3. **Start the MCP server:**
-   ```bash
-   python mcp_server.py
-   ```
-
-4. **Start the admin agent:**
-   ```bash
-   python admin_agent.py
-   ```
-   - Open [http://localhost:5001/](http://localhost:5001/) in your browser.
-
-5. **Start the orchestrator:**
-   ```bash
-   python orchestrator.py
-   ```
-   - This will run the full workflow, either via LangGraph or procedural logic.
-
-6. **Interact with the system:**
-   - In the chatbot, type: `I want to reserve a parking space`
-   - Enter reservation details when prompted.
-   - Approve/refuse in the admin UI.
-   - Chatbot will
-     notify you of the admin’s decision.
-   - If confirmed, check `confirmed_reservations.txt` for the new entry.
-
-7. **Run automated tests:**
-   ```bash
-   pytest tests/
-   ```
+The NER model (`dbmdz/bert-large-cased-finetuned-conll03-english`) is loaded once at import time. Redaction does not block the conversation — the message continues with names masked.
 
 ---
 
 ## Testing
 
-- **Unit tests:** Each module/function in isolation.
-- **Integration tests:** End-to-end workflow (user → admin → MCP → file).
-- **Load tests:** (Optional) Use tools like Locust or pytest-benchmark.
+### Run all offline tests (no LLM or Milvus needed)
+
+```bash
+pytest tests/test_e2e.py tests/test_integration.py tests/test_guard_rails.py tests/test_mcp_server.py tests/test_admin_api_client.py -v
+```
+
+### Run only end-to-end tests
+
+```bash
+pytest tests/test_e2e.py -v
+```
+
+End-to-end test scenarios:
+
+| Scenario | Description |
+|---|---|
+| E2E-1 RAG query | User question → chatbot answers, LLM output redacted |
+| E2E-2 Confirmed reservation | Full user→admin→mcp flow, admin confirms, file written |
+| E2E-3 Refused reservation | Full flow, admin refuses, file not written |
+| E2E-4 Admin dashboard | Auth, POST/GET reservation, confirm/refuse via web UI, edge cases |
+| E2E-5 Guardrails | Name in input redacted before LLM; name in output redacted before display |
+| E2E-6 Persistence | Reservation survives new DB connection; bulk storage |
+| E2E-7 Concurrency | 10 simultaneous chatbot POSTs all stored without collision |
+
+### Run RAG tests (requires live Milvus + Azure OpenAI)
+
+```bash
+pytest tests/test_rag.py -v
+```
+
+### Run evaluation report
+
+```bash
+python run_evaluation.py
+```
+
+Outputs average latency and semantic similarity scores, writes `evaluation_report.txt`.
 
 ---
 
 ## Troubleshooting
 
-- **Milvus connection errors:** Make sure Milvus is running (`docker ps`).
-- **Schema errors:** Drop and recreate the collection if you change the schema.
-- **Admin agent not receiving reservations:** Check both terminals for errors, ensure both are running and using the same port.
-- **MCP server not writing file:** Check for API key mismatch or file permissions.
-- **Orchestrator errors:** Ensure all services are running and ports are correct.
+| Symptom | Fix |
+|---|---|
+| `Collection 'parking_info' not found` | Run `python ingest_parking_data.py` |
+| `Connection refused :19530` | Run `docker compose up -d` and wait for Milvus to be healthy |
+| `AuthenticationError` from Azure OpenAI | Check env vars are exported in the same shell |
+| `Invalid password` on admin dashboard | Check `ADMIN_PASSWORD` env var matches what you type |
+| `confirmed_reservations.txt` not created | Check file permissions; admin must approve first |
+| `pytest ImportError` on LangChain | Run `pip install -r requirements.txt` inside the venv |
 
 ---
 
-## Security
+## Security Notes
 
-- MCP server requires a valid API key in the `x-api-key` header for all write operations.
-- For production, use environment variables and HTTPS.
-
----
-
-## License
-
-MIT
+- Admin dashboard requires session login; password is read from `ADMIN_PASSWORD` env var
+- All Jinja2 templates use `{{ }}` auto-escaping — no `|safe` on user-supplied data
+- NER guardrails redact names from both user input and LLM output
+- For production: use HTTPS, rotate `FLASK_SECRET_KEY`, and store credentials in a secrets manager
 
 ---
 
 ## Acknowledgements
 
 - [LangChain](https://github.com/langchain-ai/langchain)
-- [Milvus](https://milvus.io/)
-- [HuggingFace Transformers](https://huggingface.co/transformers/)
-- [OpenAI](https://openai.com/)
-- [DeepSeek](https://platform.deepseek.com/)
 - [LangGraph](https://github.com/langchain-ai/langgraph)
+- [Milvus](https://milvus.io/)
+- [HuggingFace Transformers](https://huggingface.co/)
+- [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
 
 ---
+
+## License
+
+MIT

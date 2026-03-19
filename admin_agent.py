@@ -1,121 +1,142 @@
-from flask import Flask, request, jsonify, render_template_string
-import requests
+"""
+Admin Web Dashboard (Flask)
+---------------------------
+Provides a human-in-the-loop web UI for approving/refusing reservations.
+- Session-based password authentication (password read from ADMIN_PASSWORD env var)
+- Reservations persisted in SQLite via reservation_db
+- Jinja2 auto-escaping prevents XSS (render_template_string uses {{ }} not |safe)
+- Incoming reservation POST from the chatbot is stored immediately in DB
+"""
+
 import os
+import uuid
+from flask import Flask, request, render_template_string, redirect, url_for, session, jsonify
+from reservation_db import init_db, save_reservation, get_reservation, get_all_reservations
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-me-in-production")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "adminpass")
 
-# In-memory store for demo; use a database in production
-pending_reservations = {}
+init_db()
 
-# MCP server config
-MCP_URL = "http://localhost:8000/process_reservation"
-MCP_API_KEY = os.environ.get("MCP_API_KEY", "secret123")
+# ── Auth helpers ──────────────────────────────────────────────────────────────
 
-@app.route('/reservation', methods=['POST'])
-def receive_reservation():
-    """
-    Receive a reservation request from the chatbot.
-    """
-    data = request.json
-    print("Received reservation:", data)  # Debug print
-    res_id = data['id']
-    pending_reservations[res_id] = {'data': data, 'status': 'pending'}
-    return jsonify({"message": "Reservation received", "id": res_id}), 200
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
 
-@app.route('/reservation/<res_id>/status', methods=['GET'])
-def get_status(res_id):
-    """
-    Get the current status of a reservation.
-    """
-    res = pending_reservations.get(res_id)
-    if not res:
-        return jsonify({"error": "Not found"}), 404
-    return jsonify({"status": res['status']}), 200
 
-@app.route('/reservation/<res_id>/decision', methods=['POST'])
-def admin_decision(res_id):
-    """
-    Admin confirms or refuses a reservation.
-    If confirmed, notify MCP server.
-    """
-    data = request.json
-    decision = data.get('decision')
-    if res_id not in pending_reservations:
-        return jsonify({"error": "Not found"}), 404
-    if decision not in ['confirmed', 'refused']:
-        return jsonify({"error": "Invalid decision"}), 400
-    pending_reservations[res_id]['status'] = decision
+# ── Auth routes ───────────────────────────────────────────────────────────────
 
-    # Notify MCP server if confirmed
-    if decision == "confirmed":
-        payload = {
-            "name": pending_reservations[res_id]['data']['name'],
-            "car_number": pending_reservations[res_id]['data']['car_number'],
-            "period": pending_reservations[res_id]['data']['period']
-        }
-        headers = {"x-api-key": MCP_API_KEY}
-        resp = requests.post(MCP_URL, json=payload, headers=headers)
-        print("MCP server response:", resp.status_code, resp.text)
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = ""
+    if request.method == "POST":
+        if request.form.get("password") == ADMIN_PASSWORD:
+            session["logged_in"] = True
+            return redirect(url_for("admin_dashboard"))
+        error = "Invalid password."
+    return render_template_string("""
+        <h2>Admin Login</h2>
+        {% if error %}<p style="color:red">{{ error }}</p>{% endif %}
+        <form method="post">
+            Password: <input type="password" name="password">
+            <input type="submit" value="Login">
+        </form>
+    """, error=error)
 
-    return jsonify({"message": f"Reservation {decision}"}), 200
 
-# Simple HTML admin UI
-@app.route('/')
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+DASHBOARD_TEMPLATE = """
+<h2>Pending Reservations</h2>
+<a href="{{ url_for('logout') }}">Logout</a>
+<table border="1" cellpadding="6">
+    <tr>
+        <th>ID</th><th>Name</th><th>Car Number</th><th>Period</th>
+        <th>Status</th><th>Action</th>
+    </tr>
+    {% for r in reservations %}
+    <tr>
+        <td>{{ r[0] }}</td>
+        <td>{{ r[1] }}</td>
+        <td>{{ r[2] }}</td>
+        <td>{{ r[3] }}</td>
+        <td>{{ r[4] }}</td>
+        <td>
+            {% if r[4] == 'pending' %}
+            <form method="post" action="{{ url_for('admin_decision', res_id=r[0]) }}">
+                <button name="decision" value="confirmed" type="submit">Confirm</button>
+                <button name="decision" value="refused"   type="submit">Refuse</button>
+            </form>
+            {% else %}
+            ({{ r[4] }})
+            {% endif %}
+        </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No reservations.</td></tr>
+    {% endfor %}
+</table>
+"""
+
+
+@app.route("/")
+@login_required
 def admin_dashboard():
-    """
-    HTML dashboard for admin to view and approve/refuse reservations.
-    """
-    html = """
-    <h2>Pending Reservations</h2>
-    <table border="1">
-        <tr><th>ID</th><th>Name</th><th>Car Number</th><th>Period</th><th>Status</th><th>Action</th></tr>
-        {% for res_id, res in reservations.items() %}
-        <tr>
-            <td>{{ res_id }}</td>
-            <td>{{ res['data']['name'] }}</td>
-            <td>{{ res['data']['car_number'] }}</td>
-            <td>{{ res['data']['period'] }}</td>
-            <td>{{ res['status'] }}</td>
-            <td>
-                {% if res['status'] == 'pending' %}
-                <form method="post" action="/decision/{{ res_id }}">
-                    <button name="decision" value="confirmed" type="submit">Confirm</button>
-                    <button name="decision" value="refused" type="submit">Refuse</button>
-                </form>
-                {% else %}
-                (No action)
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-    """
-    return render_template_string(html, reservations=pending_reservations)
+    reservations = get_all_reservations()
+    return render_template_string(DASHBOARD_TEMPLATE, reservations=reservations)
 
-@app.route('/decision/<res_id>', methods=['POST'])
-def admin_decision_html(res_id):
-    """
-    HTML form handler for admin decision.
-    """
-    decision = request.form.get('decision')
-    if res_id not in pending_reservations:
-        return "Reservation not found", 404
-    if decision not in ['confirmed', 'refused']:
-        return "Invalid decision", 400
-    pending_reservations[res_id]['status'] = decision
 
-    # Notify MCP server if confirmed
-    if decision == "confirmed":
-        payload = {
-            "name": pending_reservations[res_id]['data']['name'],
-            "car_number": pending_reservations[res_id]['data']['car_number'],
-            "period": pending_reservations[res_id]['data']['period']
-        }
-        headers = {"x-api-key": MCP_API_KEY}
-        resp = requests.post(MCP_URL, json=payload, headers=headers)
-        print("MCP server response:", resp.status_code, resp.text)
+@app.route("/decision/<res_id>", methods=["POST"])
+@login_required
+def admin_decision(res_id):
+    decision = request.form.get("decision")
+    if decision not in ("confirmed", "refused"):
+        return "Invalid decision.", 400
+    row = get_reservation(res_id)
+    if row is None:
+        return "Reservation not found.", 404
+    save_reservation(row[0], row[1], row[2], row[3], decision)
+    return redirect(url_for("admin_dashboard"))
 
-    return f"Reservation {res_id} {decision}. <a href='/'>Back</a>"
 
-if __name__ == '__main__':
-    app.run(port=5001)
+# ── Chatbot-facing REST API ───────────────────────────────────────────────────
+
+@app.route("/reservation", methods=["POST"])
+def receive_reservation():
+    """Called by the chatbot to submit a new reservation for admin review."""
+    data = request.get_json(force=True)
+    res_id    = data.get("id") or str(uuid.uuid4())
+    name      = data.get("name", "")
+    car_number = data.get("car_number", "")
+    period    = data.get("period", "")
+    if not all([name, car_number, period]):
+        return jsonify({"error": "Missing fields"}), 400
+    save_reservation(res_id, name, car_number, period, "pending")
+    return jsonify({"id": res_id, "status": "pending"}), 201
+
+
+@app.route("/reservation/<res_id>/status", methods=["GET"])
+def reservation_status(res_id):
+    """Called by the chatbot to poll for an admin decision."""
+    row = get_reservation(res_id)
+    if row is None:
+        return jsonify({"error": "Not found"}), 404
+    # row = (id, name, car_number, period, status)
+    return jsonify({"id": row[0], "status": row[4]})
+
+
+if __name__ == "__main__":
+    app.run(port=5001, debug=False)

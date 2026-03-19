@@ -1,6 +1,6 @@
 from reservation import Reservation
 from rag import ask_chatbot
-from guard_rails import filter_sensitive
+from guard_rails import filter_sensitive, filter_output
 import requests
 import uuid
 import time
@@ -40,9 +40,6 @@ def main():
     while True:
         user_input = input("You: ")
         filtered_input = filter_sensitive(user_input)
-        if filtered_input.startswith("[Sensitive"):
-            print(filtered_input)
-            continue
 
         # Reservation flow: collect details
         if "reserve" in user_input.lower():
@@ -61,7 +58,7 @@ def main():
                 print("No response from admin. Please try again later.")
         else:
             # Normal RAG chatbot response
-            response = ask_chatbot(filtered_input)
+            response = filter_output(ask_chatbot(filtered_input))
             print("Bot:", response)
 
 if __name__ == "__main__":
